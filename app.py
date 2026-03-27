@@ -172,9 +172,9 @@ def delete_job(job_id):
     c.execute("DELETE FROM jobs WHERE id=?", (job_id,))
     conn.commit()
     conn.close()
-        return redirect(f'/admin?key={admin_key}')
+    return redirect(f'/admin?key={admin_key}')
 
 # ========================================================
 
-if __name__ == '__main__':
-app.run(host='0.0.0.0', port=5000)
+    if __name__ == '__main__':
+       app.run(host='0.0.0.0', port=5000)

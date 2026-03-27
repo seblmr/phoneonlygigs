@@ -9,24 +9,25 @@
 <body class="bg-dark text-light">
     <div class="container py-4">
         <h2>Post a gig • $29 one-time (live instantly)</h2>
-        <form method="post">
-            <div class="mb-3"><input type="text" name="title" class="form-control" placeholder="Gig title (e.g. Build a Telegram AI agent)" required></div>
-            <div class="mb-3"><input type="text" name="company" class="form-control" placeholder="Your handle / company" required></div>
-            <div class="mb-3"><textarea name="description" class="form-control" rows="6" placeholder="Full description - be specific (Python, Termux, AI agents...)" required></textarea></div>
-            <div class="mb-3">
-                <select name="niche" class="form-select">
-                    <option>AI Agent</option>
-                    <option>Termux Script</option>
-                    <option>Mobile Solopreneur</option>
-                    <option>Light Automation</option>
-                    <option>Other phone-only</option>
-                </select>
-            </div>
-            <div class="mb-3"><input type="text" name="budget" class="form-control" placeholder="Budget (e.g. $200-$800 or equity)" required></div>
-            <div class="mb-3"><input type="text" name="contact" class="form-control" placeholder="Telegram / X / Email" required></div>
-            <button type="submit" class="btn btn-success w-100">Post gig • Pay $29</button>
-        </form>
-        <p class="text-center mt-3 text-muted">Stripe payment will be live in 24h</p>
+       <form method="post" action="/create-checkout-session">
+    <!-- tous les inputs restent IDENTIQUES à avant -->
+    <div class="mb-3"><input type="text" name="title" class="form-control" placeholder="Gig title (e.g. Build a Telegram AI agent)" required></div>
+    <div class="mb-3"><input type="text" name="company" class="form-control" placeholder="Your handle / company" required></div>
+    <div class="mb-3"><textarea name="description" class="form-control" rows="6" placeholder="Full description - be specific (Python, Termux, AI agents...)" required></textarea></div>
+    <div class="mb-3">
+        <select name="niche" class="form-select">
+            <option>AI Agent</option>
+            <option>Termux Script</option>
+            <option>Mobile Solopreneur</option>
+            <option>Light Automation</option>
+            <option>Other phone-only</option>
+        </select>
+    </div>
+    <div class="mb-3"><input type="text" name="budget" class="form-control" placeholder="Budget (e.g. $200-800 or equity)" required></div>
+    <div class="mb-3"><input type="text" name="contact" class="form-control" placeholder="Telegram / X / Email" required></div>
+    <button type="submit" class="btn btn-success w-100">Pay $29 and post gig</button>
+</form>
+       <p class="text-center mt-3 text-muted">Stripe payment will be live in 24h</p>
     </div>
 </body>
 </html>

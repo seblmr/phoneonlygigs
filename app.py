@@ -1,10 +1,15 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 import sqlite3
 from datetime import datetime
+import stripe
+import os
+import json
 
 app = Flask(__name__)
 
-# Création DB SQLite
+stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+
+# DB
 def init_db():
     conn = sqlite3.connect('jobs.db')
     c = conn.cursor()
@@ -32,22 +37,79 @@ def index():
     conn.close()
     return render_template('index.html', jobs=jobs)
 
-@app.route('/post', methods=['GET', 'POST'])
-def post_job():
-    if request.method == 'POST':
-        title = request.form['title']
-        company = request.form['company']
-        description = request.form['description']
-        niche = request.form['niche']
-        budget = request.form['budget']
-        contact = request.form['contact']
-        conn = sqlite3.connect('jobs.db')
-        c = conn.cursor()
-        c.execute("INSERT INTO jobs (title, company, description, niche, budget, contact, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                  (title, company, description, niche, budget, contact, datetime.now().strftime("%d/%m/%Y")))
-        conn.commit()
-        conn.close()
+@app.route('/create-checkout-session', methods=['POST'])
+def create_checkout_session():
+    # Récupère les données du formulaire
+    title = request.form['title']
+    company = request.form['company']
+    description = request.form['description']
+    niche = request.form['niche']
+    budget = request.form['budget']
+    contact = request.form['contact']
+
+    # Crée la session Stripe ($29 one-time)
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'usd',
+                    'product_data': {
+                        'name': 'Post a gig on PhoneOnlyGigs',
+                        'description': 'Your gig will be live instantly after payment',
+                    },
+                    'unit_amount': 2900,  # 29.00 USD
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url='https://phoneonlygigs.com/success?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url='https://phoneonlygigs.com/post',
+            metadata={
+                'job_data': json.dumps({
+                    'title': title,
+                    'company': company,
+                    'description': description,
+                    'niche': niche,
+                    'budget': budget,
+                    'contact': contact
+                })
+            }
+        )
+        return redirect(session.url, code=303)
+    except Exception as e:
+        return f"Error: {str(e)}", 400
+
+@app.route('/success')
+def success():
+    session_id = request.args.get('session_id')
+    if not session_id:
         return redirect('/')
+
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+        if session.payment_status == 'paid':
+            job_data = json.loads(session.metadata['job_data'])
+
+            conn = sqlite3.connect('jobs.db')
+            c = conn.cursor()
+            c.execute("""INSERT INTO jobs 
+                         (title, company, description, niche, budget, contact, date) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                      (job_data['title'], job_data['company'], job_data['description'],
+                       job_data['niche'], job_data['budget'], job_data['contact'],
+                       datetime.now().strftime("%d/%m/%Y")))
+            conn.commit()
+            conn.close()
+
+            return render_template('success.html')
+    except:
+        pass
+
+    return redirect('/')
+
+@app.route('/post', methods=['GET'])
+def post_job_get():
     return render_template('post.html')
 
 @app.route('/job/<int:job_id>')

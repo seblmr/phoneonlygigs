@@ -16,5 +16,15 @@
         <p><strong>Budget:</strong> {{ job[5] }}</p>
         <p><strong>Contact:</strong> <a href="https://{{ job[6] if not job[6].startswith('http') else job[6] }}">{{ job[6] }}</a></p>
     </div>
+<!-- FOOTER -->
+    <footer class="bg-black py-4 mt-5">
+        <div class="container text-center text-muted small">
+            Built from Termux • <a href="/" class="text-light">Home</a> • 
+            <a href="/post" class="text-light">Post a gig</a> • 
+            <a href="/privacy" class="text-light">Privacy Policy</a> • 
+            <a href="/admin" class="text-light">Admin (owner only)</a><br>
+            Powered by Render.com • 2026 phone-only revolution 🔥
+        </div>
+    </footer>
 </body>
 </html>

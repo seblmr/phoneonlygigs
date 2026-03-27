@@ -145,6 +145,36 @@ def generate_ideas():
     random.shuffle(ideas)
     return jsonify({"ideas": ideas[:4]})
 
-# =====================================================================
+# ==================== ADMIN DASHBOARD ====================
+
+@app.route('/admin')
+def admin():
+    admin_key = request.args.get('key')
+    if admin_key != os.getenv('ADMIN_KEY'):
+        return "<h1 class='text-center mt-5'>❌ Wrong key. You are not the owner.</h1>", 403
+
+    conn = sqlite3.connect('jobs.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM jobs ORDER BY id DESC")
+    jobs = c.fetchall()
+    conn.close()
+
+    return render_template('admin.html', jobs=jobs, admin_key=admin_key)
+
+@app.route('/delete/<int:job_id>')
+def delete_job(job_id):
+    admin_key = request.args.get('key')
+    if admin_key != os.getenv('ADMIN_KEY'):
+        return "Unauthorized", 403
+
+    conn = sqlite3.connect('jobs.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+    conn.commit()
+    conn.close()
+        return redirect(f'/admin?key={admin_key}')
+
+# ========================================================
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+app.run(host='0.0.0.0', port=5000)

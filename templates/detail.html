@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,13 +8,13 @@
 </head>
 <body class="bg-dark text-light">
     <div class="container py-4">
-        <a href="/" class="btn btn-outline-light mb-3">&larr; Retour</a>
+        <a href="/" class="btn btn-outline-light mb-3">&larr; Back to gigs</a>
         <h2>{{ job[1] }}</h2>
         <p><strong>{{ job[2] }}</strong> • {{ job[7] }}</p>
         <div class="badge bg-primary mb-3">{{ job[4] }}</div>
         <p class="lead">{{ job[3] }}</p>
-        <p><strong>Budget :</strong> {{ job[5] }}</p>
-        <p><strong>Contact :</strong> <a href="{{ job[6] }}">{{ job[6] }}</a></p>
+        <p><strong>Budget:</strong> {{ job[5] }}</p>
+        <p><strong>Contact:</strong> <a href="https://{{ job[6] if not job[6].startswith('http') else job[6] }}">{{ job[6] }}</a></p>
     </div>
 </body>
 </html>

@@ -9,25 +9,48 @@
 <body class="bg-dark text-light">
     <div class="container py-4">
         <h2>Post a gig • $29 one-time (live instantly)</h2>
-       <form method="post" action="/create-checkout-session">
-    <!-- tous les inputs restent IDENTIQUES à avant -->
-    <div class="mb-3"><input type="text" name="title" class="form-control" placeholder="Gig title (e.g. Build a Telegram AI agent)" required></div>
-    <div class="mb-3"><input type="text" name="company" class="form-control" placeholder="Your handle / company" required></div>
-    <div class="mb-3"><textarea name="description" class="form-control" rows="6" placeholder="Full description - be specific (Python, Termux, AI agents...)" required></textarea></div>
-    <div class="mb-3">
-        <select name="niche" class="form-select">
-            <option>AI Agent</option>
-            <option>Termux Script</option>
-            <option>Mobile Solopreneur</option>
-            <option>Light Automation</option>
-            <option>Other phone-only</option>
-        </select>
+        
+        <!-- AI GENERATOR BUTTON -->
+        <button onclick="generateIdeas()" class="btn btn-outline-info w-100 mb-4">
+            💡 Generate 4 phone-only gig ideas (instant)
+        </button>
+        
+        <form method="post" action="/create-checkout-session">
+            <div class="mb-3"><input type="text" name="title" id="title" class="form-control" placeholder="Gig title (e.g. Build a Telegram AI agent)" required></div>
+            <div class="mb-3"><input type="text" name="company" id="company" class="form-control" placeholder="Your handle / company" required></div>
+            <div class="mb-3"><textarea name="description" id="description" class="form-control" rows="6" placeholder="Full description - be specific (Python, Termux, AI agents...)" required></textarea></div>
+            <div class="mb-3">
+                <select name="niche" class="form-select">
+                    <option>AI Agent</option>
+                    <option>Termux Script</option>
+                    <option>Mobile Solopreneur</option>
+                    <option>Light Automation</option>
+                    <option>Other phone-only</option>
+                </select>
+            </div>
+            <div class="mb-3"><input type="text" name="budget" id="budget" class="form-control" placeholder="Budget (e.g. $200-800 or equity)" required></div>
+            <div class="mb-3"><input type="text" name="contact" id="contact" class="form-control" placeholder="Telegram / X / Email" required></div>
+            <button type="submit" class="btn btn-success w-100">Pay $29 and post gig</button>
+        </form>
+        
+        <p class="text-center mt-3 text-muted">Stripe payment • GDPR handled by Stripe</p>
     </div>
-    <div class="mb-3"><input type="text" name="budget" class="form-control" placeholder="Budget (e.g. $200-800 or equity)" required></div>
-    <div class="mb-3"><input type="text" name="contact" class="form-control" placeholder="Telegram / X / Email" required></div>
-    <button type="submit" class="btn btn-success w-100">Pay $29 and post gig</button>
-</form>
-       <p class="text-center mt-3 text-muted">Stripe payment will be live in 24h</p>
-    </div>
+
+    <script>
+        function generateIdeas() {
+            fetch('/generate-ideas')
+                .then(response => response.json())
+                .then(data => {
+                    const ideas = data.ideas;
+                    // Remplit aléatoirement les champs (tu peux changer l'idée 1 par défaut)
+                    document.getElementById('title').value = ideas[0];
+                    document.getElementById('description').value = 
+                        "I'm looking for a phone-only builder with Termux/Python experience to " + ideas[0].toLowerCase() + 
+                        ". Must run 100% on mobile. Budget: see below. DM me on X/Telegram for details.";
+                    // Les autres champs restent à remplir manuellement (c’est volontaire)
+                    alert("✅ 4 ideas generated! Title and description pre-filled. Feel free to tweak.");
+                });
+        }
+    </script>
 </body>
 </html>

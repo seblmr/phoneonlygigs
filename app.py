@@ -121,5 +121,30 @@ def job_detail(job_id):
     conn.close()
     return render_template('detail.html', job=job)
 
+# ==================== AJOUTE ÇA À LA FIN DE app.py ====================
+
+@app.route('/privacy')
+def privacy():
+    return render_template('privacy.html')
+
+@app.route('/generate-ideas')
+def generate_ideas():
+    import random
+    ideas = [
+        "Build a Telegram AI agent that replies automatically using Termux + Python",
+        "Create a phone-only X growth bot (Termux script that likes & comments)",
+        "Scrape trending TikTok sounds and auto-post Reels via Termux",
+        "Make a lightweight AI content repurposer (YouTube → X threads)",
+        "Develop a mobile solopreneur dashboard that runs entirely in Termux",
+        "Automate Stripe payouts + invoice generation from phone",
+        "Build a no-laptop dropshipping notifier (price tracker in Termux)",
+        "Create an AI agent that finds micro-influencers on X and DMs them",
+        "Phone-only lead gen bot for indie hackers (Scrapes IndieHackers + DM)",
+        "Termux-based crypto arbitrage alert system (super light)"
+    ]
+    random.shuffle(ideas)
+    return jsonify({"ideas": ideas[:4]})
+
+# =====================================================================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

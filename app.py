@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import sqlite3
-from datetime import datetime
+from datetime import datetime, datetimedelta
 import stripe
 import os
 import json
@@ -28,6 +28,17 @@ def init_db():
 
 init_db()
 
+# Ajoute cette fonction n'importe où dans app.py (après init_db par exemple)
+def get_gigs_this_week():
+    conn = sqlite3.connect('jobs.db')
+    c = conn.cursor()
+    one_week_ago = (datetime.now() - timedelta(days=7)).strftime("%d/%m/%Y")
+    # Note: ça marche si la date est au format dd/mm/yyyy. Si tu veux plus précis, on peut changer plus tard.
+    c.execute("SELECT COUNT(*) FROM jobs WHERE date >= ?", (one_week_ago,))
+    count = c.fetchone()[0]
+    conn.close()
+    return count
+
 @app.route('/')
 def index():
     conn = sqlite3.connect('jobs.db')
@@ -35,7 +46,8 @@ def index():
     c.execute("SELECT * FROM jobs ORDER BY id DESC")
     jobs = c.fetchall()
     conn.close()
-    return render_template('index.html', jobs=jobs)
+    weekly_count = get_gigs_this_week()
+    return render_template('index.html', jobs=jobs, weekly_count=weekly_count)
 
 @app.route('/create-checkout-session', methods=['POST'])
 def create_checkout_session():

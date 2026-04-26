@@ -8,38 +8,41 @@
 </head>
 <body class="bg-dark text-light">
     <div class="container py-4">
-        <h2>🔧 Admin Dashboard</h2>
-        <p class="text-muted">You are logged in as owner.</p>
-        
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="mb-0">🔧 Admin Dashboard</h2>
+            <!-- FIX: logout propre, plus de clé dans l'URL -->
+            <a href="/admin/logout" class="btn btn-outline-danger btn-sm">Logout</a>
+        </div>
+
         <a href="/" class="btn btn-outline-light mb-4">&larr; Back to public site</a>
-        
+
         <h4 class="mb-3">All gigs ({{ jobs|length }})</h4>
-        
+
         {% for job in jobs %}
         <div class="card bg-secondary mb-3">
             <div class="card-body">
-                <div class="d-flex justify-content-between">
+                <div class="d-flex justify-content-between align-items-start">
                     <div>
-                        <h5>{{ job[1] }} <span class="badge bg-primary">{{ job[4] }}</span></h5>
-                        <p class="text-muted">{{ job[2] }} • {{ job[7] }}</p>
-                        <p>{{ job[3][:120] }}...</p>
+                        <!-- FIX: accès par nom grâce à row_factory -->
+                        <h5>{{ job['title'] }} <span class="badge bg-primary">{{ job['niche'] }}</span></h5>
+                        <p class="text-muted mb-1">{{ job['company'] }} • {{ job['date'] }}</p>
+                        <p class="mb-0">{{ job['description'][:120] }}...</p>
                     </div>
-                    <div>
-                        <a href="/delete/{{ job[0] }}?key={{ admin_key }}" 
-                           class="btn btn-danger btn-sm"
-                           onclick="return confirm('Delete this gig forever?')">
-                            🗑 Delete
-                        </a>
+                    <div class="ms-3 flex-shrink-0">
+                        <!-- FIX: suppression en POST, plus en GET -->
+                        <form method="post" action="/delete/{{ job['id'] }}"
+                              onsubmit="return confirm('Delete this gig forever?')">
+                            <button type="submit" class="btn btn-danger btn-sm">🗑 Delete</button>
+                        </form>
                     </div>
                 </div>
             </div>
         </div>
         {% endfor %}
-        
-        <p class="text-center text-muted small mt-5">
-            Admin link: https://phoneonlygigs.com/admin?key=TON_MOT_DE_PASSE<br>
-            Keep this link private.
-        </p>
+
+        {% if not jobs %}
+        <p class="text-center text-muted mt-5">No gigs yet.</p>
+        {% endif %}
     </div>
 </body>
 </html>

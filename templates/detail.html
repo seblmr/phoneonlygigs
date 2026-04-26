@@ -3,27 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ job[1] }} • PhoneOnlyGigs</title>
+    <title>{{ job['title'] }} • PhoneOnlyGigs</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-dark text-light">
     <div class="container py-4">
         <a href="/" class="btn btn-outline-light mb-3">&larr; Back to gigs</a>
-        <h2>{{ job[1] }}</h2>
-        <p><strong>{{ job[2] }}</strong> • {{ job[7] }}</p>
-        <div class="badge bg-primary mb-3">{{ job[4] }}</div>
-        <p class="lead">{{ job[3] }}</p>
-        <p><strong>Budget:</strong> {{ job[5] }}</p>
-        <p><strong>Contact:</strong> <a href="https://{{ job[6] if not job[6].startswith('http') else job[6] }}">{{ job[6] }}</a></p>
+
+        <!-- FIX: accès par nom grâce à row_factory -->
+        <h2>{{ job['title'] }}</h2>
+        <p><strong>{{ job['company'] }}</strong> • {{ job['date'] }}</p>
+        <div class="badge bg-primary mb-3">{{ job['niche'] }}</div>
+        <p class="lead">{{ job['description'] }}</p>
+        <p><strong>Budget:</strong> {{ job['budget'] }}</p>
+
+        <!-- FIX: logique contact robuste selon le type (URL, email, handle) -->
+        <p><strong>Contact:</strong>
+            {% set c = job['contact'] %}
+            {% if c.startswith('http://') or c.startswith('https://') %}
+                <a href="{{ c }}" target="_blank" rel="noopener">{{ c }}</a>
+            {% elif '@' in c and '.' in c and ' ' not in c %}
+                {# Looks like an email address #}
+                <a href="mailto:{{ c }}">{{ c }}</a>
+            {% else %}
+                {# Telegram handle, X handle, or free text — affiche sans lien cassé #}
+                <span class="text-info">{{ c }}</span>
+            {% endif %}
+        </p>
     </div>
-<!-- FOOTER -->
+
     <footer class="bg-black py-4 mt-5">
         <div class="container text-center text-muted small">
-            Built from Termux • <a href="/" class="text-light">Home</a> • 
-            <a href="/post" class="text-light">Post a gig</a> • 
-            <a href="/privacy" class="text-light">Privacy Policy</a> • 
-            <a href="/admin" class="text-light">Admin (owner only)</a><br>
-            Powered by Render.com • 2026 phone-only revolution 🔥
+            Built from Termux •
+            <a href="/" class="text-light">Home</a> •
+            <a href="/post" class="text-light">Post a gig</a> •
+            <a href="/privacy" class="text-light">Privacy Policy</a><br>
+             2026 phone-only revolution 🔥
         </div>
     </footer>
 </body>

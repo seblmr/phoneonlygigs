@@ -1,66 +1,159 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, session
-import sqlite3
-from datetime import datetime, timedelta
-import stripe
-import os
 import json
+import os
+import re
 import time
 from collections import defaultdict
 from functools import wraps
 
+import stripe
+from flask import (Flask, jsonify, redirect, render_template,
+                   request, session, url_for)
+
+import db
+from db import (create_job, delete_job, get_all_jobs, get_gigs_this_week,
+                get_job, get_jobs_paginated, is_session_processed, mark_session_processed)
+
+# ── App ───────────────────────────────────────────────────────────────────────
+
 app = Flask(__name__)
-# FIX: secret key nécessaire pour les sessions Flask
 app.secret_key = os.getenv('SECRET_KEY', 'change-this-in-production')
 
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
-
-# ── DB ──────────────────────────────────────────────────────────────────────
-
-def get_db():
-    # FIX: row_factory → accès par nom (job['title']) au lieu de job[1]
-    conn = sqlite3.connect('jobs.db')
-    conn.row_factory = sqlite3.Row
-    return conn
+db.init_db()
 
 
-def init_db():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS jobs (
-        id          INTEGER PRIMARY KEY,
-        title       TEXT,
-        company     TEXT,
-        description TEXT,
-        niche       TEXT,
-        budget      TEXT,
-        contact     TEXT,
-        date        TEXT
-    )''')
-    # FIX: table d'idempotence pour éviter les doublons au rechargement de /success
-    c.execute('''CREATE TABLE IF NOT EXISTS processed_sessions (
-        session_id   TEXT PRIMARY KEY,
-        processed_at TEXT
-    )''')
-    conn.commit()
-    conn.close()
+# ── Email ─────────────────────────────────────────────────────────────────────
+
+def send_confirmation_email(to_email: str, job_data: dict, job_url: str) -> bool:
+    """Envoie un email de confirmation via Resend. Retourne True si succès."""
+    import urllib.request
+    import urllib.error
+
+    api_key = os.getenv('RESEND_API_KEY')
+    if not api_key:
+        print('[email] RESEND_API_KEY manquant — email non envoyé')
+        return False
+
+    html_body = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head><meta charset="UTF-8"></head>
+    <body style="margin:0;padding:0;background:#0f0f0f;font-family:'Segoe UI',Arial,sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f0f;padding:40px 20px;">
+        <tr><td align="center">
+          <table width="600" cellpadding="0" cellspacing="0"
+                 style="background:#1a1a1a;border-radius:12px;overflow:hidden;border:1px solid #2a2a2a;">
+            <tr>
+              <td style="background:linear-gradient(135deg,#00c853,#1de9b6);padding:32px 40px;text-align:center;">
+                <h1 style="margin:0;color:#fff;font-size:28px;">📱 PhoneOnlyGigs</h1>
+                <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:15px;">
+                  Your gig is live. The phone-only revolution is hiring.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:40px;">
+                <p style="color:#e0e0e0;font-size:16px;margin:0 0 24px;">
+                  Hey 👋 — your gig <strong style="color:#fff;">"{job_data['title']}"</strong>
+                  is now live on PhoneOnlyGigs.
+                </p>
+                <table width="100%" cellpadding="0" cellspacing="0"
+                       style="background:#111;border:1px solid #333;border-radius:10px;margin-bottom:32px;">
+                  <tr>
+                    <td style="padding:24px;">
+                      <h2 style="margin:0 0 4px;color:#fff;font-size:20px;">{job_data['title']}</h2>
+                      <p style="margin:0 0 16px;color:#888;font-size:14px;">
+                        {job_data['company']} &nbsp;·&nbsp;
+                        <span style="background:#1de9b615;color:#1de9b6;padding:2px 8px;border-radius:20px;font-size:12px;">
+                          {job_data['niche']}
+                        </span>
+                      </p>
+                      <p style="margin:0 0 16px;color:#ccc;font-size:14px;line-height:1.6;">
+                        {job_data['description'][:200]}{'…' if len(job_data['description']) > 200 else ''}
+                      </p>
+                      <p style="margin:0;color:#aaa;font-size:13px;">
+                        💰 Budget : <strong style="color:#fff;">{job_data['budget']}</strong>
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+                <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+                  <tr>
+                    <td align="center">
+                      <a href="{job_url}"
+                         style="display:inline-block;background:linear-gradient(135deg,#00c853,#1de9b6);
+                                color:#fff;text-decoration:none;padding:14px 36px;border-radius:8px;
+                                font-weight:700;font-size:15px;">
+                        View your live gig →
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <table width="100%" cellpadding="0" cellspacing="0"
+                       style="background:#0d2818;border:1px solid #1de9b630;border-radius:8px;margin-bottom:32px;">
+                  <tr>
+                    <td style="padding:20px 24px;">
+                      <p style="margin:0 0 8px;color:#1de9b6;font-size:13px;font-weight:700;">ℹ️ Good to know</p>
+                      <ul style="margin:0;padding-left:18px;color:#aaa;font-size:13px;line-height:1.8;">
+                        <li>Your gig is active for <strong style="color:#e0e0e0;">30 days</strong></li>
+                        <li>Freelancers will contact you directly via your listed contact</li>
+                        <li>Need to edit or remove your gig? Reply to this email</li>
+                      </ul>
+                    </td>
+                  </tr>
+                </table>
+                <p style="color:#666;font-size:13px;line-height:1.6;margin:0;">
+                  Thanks for posting on PhoneOnlyGigs. Built from a phone, for people building from their phone. 🔥<br>
+                  — The PhoneOnlyGigs team
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="background:#111;padding:20px 40px;border-top:1px solid #222;text-align:center;">
+                <p style="margin:0;color:#444;font-size:12px;">
+                  PhoneOnlyGigs · You received this because you posted a gig ·
+                  <a href="https://phoneonlygigs.com/privacy" style="color:#666;">Privacy</a>
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+      </table>
+    </body>
+    </html>
+    """
+
+    payload = json.dumps({
+        'from':    'PhoneOnlyGigs <noreply@phoneonlygigs.com>',
+        'to':      [to_email],
+        'subject': f'✅ Your gig "{job_data["title"]}" is live on PhoneOnlyGigs',
+        'html':    html_body,
+    }).encode()
+
+    req = urllib.request.Request(
+        'https://api.resend.com/emails',
+        data=payload,
+        headers={
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type':  'application/json',
+        },
+        method='POST'
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(f'[email] Confirmation envoyée à {to_email} — status {resp.status}')
+            return True
+    except urllib.error.HTTPError as e:
+        print(f'[email] Resend HTTP error {e.code}: {e.read().decode()}')
+        return False
+    except Exception as e:
+        print(f'[email] Erreur inattendue: {e}')
+        return False
 
 
-init_db()
-
-
-def get_gigs_this_week():
-    conn = get_db()
-    c = conn.cursor()
-    # FIX: format ISO YYYY-MM-DD → comparaison de chaînes fiable
-    one_week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-    c.execute("SELECT COUNT(*) FROM jobs WHERE date >= ?", (one_week_ago,))
-    count = c.fetchone()[0]
-    conn.close()
-    return count
-
-
-# ── Rate limiter léger (sans dépendance externe) ─────────────────────────────
+# ── Rate limiter ──────────────────────────────────────────────────────────────
 
 _rate_store: dict = defaultdict(list)
 
@@ -70,7 +163,7 @@ def rate_limit(max_calls: int, period: int):
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
-            ip = request.remote_addr
+            ip  = request.remote_addr
             now = time.time()
             _rate_store[ip] = [t for t in _rate_store[ip] if now - t < period]
             if len(_rate_store[ip]) >= max_calls:
@@ -81,7 +174,7 @@ def rate_limit(max_calls: int, period: int):
     return decorator
 
 
-# ── Auth admin via session (plus sûr que la clé dans l'URL) ─────────────────
+# ── Auth admin ────────────────────────────────────────────────────────────────
 
 def admin_required(f):
     @wraps(f)
@@ -110,27 +203,123 @@ def admin_logout():
     return redirect('/')
 
 
-# ── Routes publiques ─────────────────────────────────────────────────────────
+# ── Validation formulaire ─────────────────────────────────────────────────────
+
+ALLOWED_NICHES = {
+    'AI Agent', 'Termux Script', 'Mobile Solopreneur',
+    'Light Automation', 'Other phone-only',
+}
+
+EMAIL_RE = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$')
+
+
+def validate_post_form(form) -> dict[str, str]:
+    """Retourne un dict {champ: message_erreur} — vide si tout est OK."""
+    errors: dict[str, str] = {}
+
+    title = form.get('title', '').strip()
+    if not title:
+        errors['title'] = 'Title is required.'
+    elif len(title) < 10:
+        errors['title'] = 'Title must be at least 10 characters.'
+    elif len(title) > 100:
+        errors['title'] = 'Title must be 100 characters or less.'
+
+    company = form.get('company', '').strip()
+    if not company:
+        errors['company'] = 'Handle / company is required.'
+    elif len(company) > 60:
+        errors['company'] = 'Handle / company must be 60 characters or less.'
+
+    description = form.get('description', '').strip()
+    if not description:
+        errors['description'] = 'Description is required.'
+    elif len(description) < 50:
+        errors['description'] = (
+            f'Description is too short ({len(description)}/50 chars min). '
+            'Be specific so you get great applicants.'
+        )
+    elif len(description) > 2000:
+        errors['description'] = f'Description must be 2 000 characters or less (currently {len(description)}).'
+
+    niche = form.get('niche', '').strip()
+    if niche not in ALLOWED_NICHES:
+        errors['niche'] = 'Please select a valid niche.'
+
+    budget = form.get('budget', '').strip()
+    if not budget:
+        errors['budget'] = 'Budget is required.'
+    elif len(budget) > 80:
+        errors['budget'] = 'Budget must be 80 characters or less.'
+
+    contact = form.get('contact', '').strip()
+    if not contact:
+        errors['contact'] = 'Contact is required.'
+    elif len(contact) > 120:
+        errors['contact'] = 'Contact must be 120 characters or less.'
+
+    raw_email = form.get('poster_email', '').strip().lower()
+    if not raw_email:
+        errors['poster_email'] = 'Your email is required to send the confirmation.'
+    elif not EMAIL_RE.match(raw_email):
+        errors['poster_email'] = 'Please enter a valid email address.'
+    elif len(raw_email) > 254:
+        errors['poster_email'] = 'Email address is too long.'
+
+    return errors
+
+
+# ── Routes publiques ──────────────────────────────────────────────────────────
+
+PER_PAGE = 10  # gigs par page
+
 
 @app.route('/')
 def index():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM jobs ORDER BY id DESC")
-    jobs = c.fetchall()
-    conn.close()
+    # Lecture et validation du paramètre ?page=
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+
+    jobs, total  = get_jobs_paginated(page, PER_PAGE)
     weekly_count = get_gigs_this_week()
-    return render_template('index.html', jobs=jobs, weekly_count=weekly_count)
+
+    import math
+    total_pages = max(1, math.ceil(total / PER_PAGE))
+
+    # Si page demandée dépasse le total, on redirige vers la dernière page
+    if page > total_pages:
+        return redirect(url_for('index', page=total_pages))
+
+    return render_template(
+        'index.html',
+        jobs=jobs,
+        weekly_count=weekly_count,
+        page=page,
+        total_pages=total_pages,
+        total_jobs=total,
+    )
+
+
+@app.route('/post', methods=['GET'])
+def post_job_get():
+    return render_template('post.html')
 
 
 @app.route('/create-checkout-session', methods=['POST'])
 def create_checkout_session():
-    title       = request.form['title']
-    company     = request.form['company']
-    description = request.form['description']
-    niche       = request.form['niche']
-    budget      = request.form['budget']
-    contact     = request.form['contact']
+    errors = validate_post_form(request.form)
+    if errors:
+        return render_template('post.html', errors=errors, form=request.form), 422
+
+    title        = request.form['title'].strip()
+    company      = request.form['company'].strip()
+    description  = request.form['description'].strip()
+    niche        = request.form['niche'].strip()
+    budget       = request.form['budget'].strip()
+    contact      = request.form['contact'].strip()
+    poster_email = request.form['poster_email'].strip().lower()
 
     try:
         checkout_session = stripe.checkout.Session.create(
@@ -147,16 +336,14 @@ def create_checkout_session():
                 'quantity': 1,
             }],
             mode='payment',
+            customer_email=poster_email,
             success_url='https://phoneonlygigs.com/success?session_id={CHECKOUT_SESSION_ID}',
             cancel_url='https://phoneonlygigs.com/post',
             metadata={
+                'poster_email': poster_email,
                 'job_data': json.dumps({
-                    'title':       title,
-                    'company':     company,
-                    'description': description,
-                    'niche':       niche,
-                    'budget':      budget,
-                    'contact':     contact,
+                    'title': title, 'company': company, 'description': description,
+                    'niche': niche, 'budget': budget, 'contact': contact,
                 })
             }
         )
@@ -167,63 +354,16 @@ def create_checkout_session():
 
 @app.route('/success')
 def success():
-    session_id = request.args.get('session_id')
-    if not session_id:
+    if not request.args.get('session_id'):
         return redirect('/')
-
-    conn = get_db()
-    c = conn.cursor()
-
-    try:
-        # FIX: idempotence — on vérifie si cette session Stripe a déjà été traitée
-        c.execute("SELECT session_id FROM processed_sessions WHERE session_id = ?", (session_id,))
-        if c.fetchone():
-            conn.close()
-            return render_template('success.html')  # page de confirmation sans réinsérer
-
-        stripe_session = stripe.checkout.Session.retrieve(session_id)
-        if stripe_session.payment_status == 'paid':
-            job_data = json.loads(stripe_session.metadata['job_data'])
-
-            c.execute(
-                """INSERT INTO jobs (title, company, description, niche, budget, contact, date)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    job_data['title'], job_data['company'], job_data['description'],
-                    job_data['niche'], job_data['budget'], job_data['contact'],
-                    datetime.now().strftime('%Y-%m-%d'),  # FIX: format ISO
-                )
-            )
-            # FIX: on marque la session comme traitée
-            c.execute(
-                "INSERT INTO processed_sessions (session_id, processed_at) VALUES (?, ?)",
-                (session_id, datetime.now().isoformat())
-            )
-            conn.commit()
-            conn.close()
-            return render_template('success.html')
-
-    except Exception as e:
-        print(f"[/success] Error: {e}")
-
-    conn.close()
-    return redirect('/')
-
-
-@app.route('/post', methods=['GET'])
-def post_job_get():
-    return render_template('post.html')
+    return render_template('success.html')
 
 
 @app.route('/job/<int:job_id>')
 def job_detail(job_id):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-    job = c.fetchone()
-    conn.close()
+    job = get_job(job_id)
     if not job:
-        return redirect('/')
+        return render_template('404.html'), 404
     return render_template('detail.html', job=job)
 
 
@@ -233,7 +373,7 @@ def privacy():
 
 
 @app.route('/generate-ideas')
-@rate_limit(max_calls=5, period=60)  # FIX: 5 appels max par minute par IP
+@rate_limit(max_calls=5, period=60)
 def generate_ideas():
     import random
     ideas = [
@@ -252,31 +392,85 @@ def generate_ideas():
     return jsonify({"ideas": ideas[:4]})
 
 
-# ── Admin dashboard ──────────────────────────────────────────────────────────
+# ── Stripe Webhook ────────────────────────────────────────────────────────────
+
+@app.route('/webhook', methods=['POST'])
+def stripe_webhook():
+    payload        = request.get_data()
+    sig_header     = request.headers.get('Stripe-Signature')
+    webhook_secret = os.getenv('STRIPE_WEBHOOK_SECRET')
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+    except ValueError:
+        print('[webhook] Invalid payload')
+        return '', 400
+    except stripe.error.SignatureVerificationError:
+        print('[webhook] Invalid signature')
+        return '', 400
+
+    if event['type'] != 'checkout.session.completed':
+        return '', 200
+
+    stripe_session = event['data']['object']
+
+    if stripe_session.get('payment_status') != 'paid':
+        print(f"[webhook] Session {stripe_session['id']} not paid — skipping")
+        return '', 200
+
+    session_id = stripe_session['id']
+
+    if is_session_processed(session_id):
+        print(f"[webhook] Session {session_id} already processed — skipping")
+        return '', 200
+
+    try:
+        job_data = json.loads(stripe_session['metadata']['job_data'])
+        job_id   = create_job(job_data)
+        mark_session_processed(session_id)
+        print(f"[webhook] Gig #{job_id} created for session {session_id} ✓")
+
+        poster_email = stripe_session['metadata'].get('poster_email')
+        if poster_email:
+            job_url = f"https://phoneonlygigs.com/job/{job_id}"
+            send_confirmation_email(poster_email, job_data, job_url)
+
+    except Exception as e:
+        print(f"[webhook] Error: {e}")
+        return '', 500
+
+    return '', 200
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
 
 @app.route('/admin')
-@admin_required  # FIX: protégé par session, plus par clé dans l'URL
+@admin_required
 def admin():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM jobs ORDER BY id DESC")
-    jobs = c.fetchall()
-    conn.close()
+    jobs = get_all_jobs()
     return render_template('admin.html', jobs=jobs)
 
 
-@app.route('/delete/<int:job_id>', methods=['POST'])  # FIX: POST uniquement
+@app.route('/delete/<int:job_id>', methods=['POST'])
 @admin_required
-def delete_job(job_id):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
-    conn.commit()
-    conn.close()
+def admin_delete_job(job_id):
+    delete_job(job_id)
     return redirect(url_for('admin'))
 
 
-# ── Entry point ──────────────────────────────────────────────────────────────
+# ── Gestionnaires d'erreurs ───────────────────────────────────────────────────
+
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('404.html'), 404
+
+
+@app.errorhandler(500)
+def server_error(e):
+    return render_template('500.html'), 500
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

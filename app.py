@@ -10,8 +10,9 @@ from flask import (Flask, jsonify, redirect, render_template,
                    request, session, url_for)
 
 import db
-from db import (create_job, delete_job, get_all_jobs, get_gigs_this_week,
-                get_job, get_jobs_paginated, is_session_processed, mark_session_processed)
+from db import (create_job, delete_job, get_all_jobs, get_featured_jobs,
+                get_gigs_this_week, get_job, get_jobs_paginated,
+                is_session_processed, mark_session_processed, toggle_featured)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -276,25 +277,25 @@ PER_PAGE = 10  # gigs par page
 
 @app.route('/')
 def index():
-    # Lecture et validation du paramètre ?page=
     try:
         page = max(1, int(request.args.get('page', 1)))
     except (ValueError, TypeError):
         page = 1
 
-    jobs, total  = get_jobs_paginated(page, PER_PAGE)
-    weekly_count = get_gigs_this_week()
+    featured_jobs        = get_featured_jobs()
+    jobs, total          = get_jobs_paginated(page, PER_PAGE)
+    weekly_count         = get_gigs_this_week()
 
     import math
     total_pages = max(1, math.ceil(total / PER_PAGE))
 
-    # Si page demandée dépasse le total, on redirige vers la dernière page
     if page > total_pages:
         return redirect(url_for('index', page=total_pages))
 
     return render_template(
         'index.html',
         jobs=jobs,
+        featured_jobs=featured_jobs,
         weekly_count=weekly_count,
         page=page,
         total_pages=total_pages,
@@ -321,6 +322,11 @@ def create_checkout_session():
     contact      = request.form['contact'].strip()
     poster_email = request.form['poster_email'].strip().lower()
 
+    # 3. Session Stripe — prix selon le type choisi
+    is_featured = request.form.get('plan') == 'featured'
+    unit_amount = 5900 if is_featured else 2900  # $59 featured / $29 standard
+    plan_label  = 'Featured gig — top of the list for 7 days' if is_featured else 'Standard gig listing'
+
     try:
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card'],
@@ -328,10 +334,10 @@ def create_checkout_session():
                 'price_data': {
                     'currency': 'usd',
                     'product_data': {
-                        'name': 'Post a gig on PhoneOnlyGigs',
+                        'name': f'PhoneOnlyGigs — {plan_label}',
                         'description': 'Your gig will be live instantly after payment',
                     },
-                    'unit_amount': 2900,
+                    'unit_amount': unit_amount,
                 },
                 'quantity': 1,
             }],
@@ -341,6 +347,7 @@ def create_checkout_session():
             cancel_url='https://phoneonlygigs.com/post',
             metadata={
                 'poster_email': poster_email,
+                'featured': 'true' if is_featured else 'false',
                 'job_data': json.dumps({
                     'title': title, 'company': company, 'description': description,
                     'niche': niche, 'budget': budget, 'contact': contact,
@@ -425,10 +432,11 @@ def stripe_webhook():
         return '', 200
 
     try:
-        job_data = json.loads(stripe_session['metadata']['job_data'])
-        job_id   = create_job(job_data)
+        job_data  = json.loads(stripe_session['metadata']['job_data'])
+        is_featured = stripe_session['metadata'].get('featured') == 'true'
+        job_id    = create_job(job_data, featured=is_featured)
         mark_session_processed(session_id)
-        print(f"[webhook] Gig #{job_id} created for session {session_id} ✓")
+        print(f"[webhook] Gig #{job_id} created (featured={is_featured}) for session {session_id} ✓")
 
         poster_email = stripe_session['metadata'].get('poster_email')
         if poster_email:
@@ -455,6 +463,15 @@ def admin():
 @admin_required
 def admin_delete_job(job_id):
     delete_job(job_id)
+    return redirect(url_for('admin'))
+
+
+@app.route('/feature/<int:job_id>', methods=['POST'])
+@admin_required
+def admin_toggle_featured(job_id):
+    """Active ou désactive le featured d'un gig depuis l'admin."""
+    action = request.form.get('action')  # 'enable' ou 'disable'
+    toggle_featured(job_id, featured=(action == 'enable'))
     return redirect(url_for('admin'))
 
 

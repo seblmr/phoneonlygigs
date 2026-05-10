@@ -76,6 +76,55 @@
             <a href="/post" class="btn btn-success px-4">+ Post a gig ($29)</a>
         </div>
 
+        <!-- ── Featured gigs (page 1 uniquement) ── -->
+        {% if featured_jobs and page == 1 %}
+        <div class="mb-4">
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <span style="font-size:18px;">⭐</span>
+                <span class="fw-bold text-warning">Featured gigs</span>
+                <span class="text-muted small">— pinned at the top</span>
+            </div>
+
+            {% for job in featured_jobs %}
+            <a href="/job/{{ job['id'] }}" class="text-decoration-none">
+                <div class="card mb-3"
+                     style="background:#0d2818;border:2px solid #1de9b6;border-radius:10px;
+                            transition:transform .15s;">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start gap-3">
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                                    <span class="badge"
+                                          style="background:#1de9b6;color:#000;font-size:10px;
+                                                 letter-spacing:.5px;">⭐ FEATURED</span>
+                                    <h5 class="mb-0 text-white">{{ job['title'] }}</h5>
+                                    <span class="niche-badge">{{ job['niche'] }}</span>
+                                </div>
+                                <p class="text-muted small mb-2">
+                                    {{ job['company'] }} &nbsp;·&nbsp; {{ job['date'] }}
+                                    &nbsp;·&nbsp;
+                                    <span style="color:#1de9b6;">
+                                        Featured until {{ job['featured_until'] }}
+                                    </span>
+                                </p>
+                                <p class="text-light mb-0 small" style="opacity:.85;line-height:1.5;">
+                                    {{ job['description'][:140] }}{% if job['description']|length > 140 %}…{% endif %}
+                                </p>
+                            </div>
+                            <div class="flex-shrink-0 text-end">
+                                <span class="text-success fw-bold small">{{ job['budget'] }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+
+            <hr style="border-color:#2a2a2a;margin:28px 0 24px;">
+        </div>
+        {% endif %}
+        <!-- ── /Featured gigs ── -->
+
         <!-- Gig list -->
         {% if jobs %}
             {% for job in jobs %}

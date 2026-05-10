@@ -47,6 +47,14 @@ def init_db() -> None:
         )
     ''')
 
+    # Migration : ajout des colonnes featured si elles n'existent pas encore
+    # (SQLite ne supporte pas ADD COLUMN IF NOT EXISTS avant 3.37)
+    existing = {row[1] for row in c.execute("PRAGMA table_info(jobs)")}
+    if 'featured' not in existing:
+        c.execute("ALTER TABLE jobs ADD COLUMN featured INTEGER NOT NULL DEFAULT 0")
+    if 'featured_until' not in existing:
+        c.execute("ALTER TABLE jobs ADD COLUMN featured_until TEXT")
+
     conn.commit()
     conn.close()
 
@@ -63,21 +71,42 @@ def get_all_jobs() -> list[sqlite3.Row]:
     return jobs
 
 
+def get_featured_jobs() -> list[sqlite3.Row]:
+    """Retourne les gigs featured actifs (non expirés), du plus récent au plus ancien."""
+    conn  = get_db()
+    c     = conn.cursor()
+    today = datetime.now().strftime('%Y-%m-%d')
+    c.execute(
+        "SELECT * FROM jobs WHERE featured = 1 AND featured_until >= ? ORDER BY id DESC",
+        (today,)
+    )
+    jobs = c.fetchall()
+    conn.close()
+    return jobs
+
+
 def get_jobs_paginated(page: int, per_page: int) -> tuple[list[sqlite3.Row], int]:
     """
-    Retourne (gigs_de_la_page, total_gigs).
-    page est 1-indexé. per_page = nombre de gigs par page.
+    Retourne (gigs_de_la_page, total_gigs) en excluant les featured actifs.
+    page est 1-indexé.
     """
     conn   = get_db()
     c      = conn.cursor()
+    today  = datetime.now().strftime('%Y-%m-%d')
     offset = (page - 1) * per_page
 
-    c.execute("SELECT COUNT(*) FROM jobs")
+    # On exclut les gigs featured actifs — ils s'affichent en bloc séparé
+    c.execute(
+        "SELECT COUNT(*) FROM jobs WHERE NOT (featured = 1 AND featured_until >= ?)",
+        (today,)
+    )
     total = c.fetchone()[0]
 
     c.execute(
-        "SELECT * FROM jobs ORDER BY id DESC LIMIT ? OFFSET ?",
-        (per_page, offset)
+        """SELECT * FROM jobs
+           WHERE NOT (featured = 1 AND featured_until >= ?)
+           ORDER BY id DESC LIMIT ? OFFSET ?""",
+        (today, per_page, offset)
     )
     jobs = c.fetchall()
     conn.close()
@@ -107,16 +136,23 @@ def get_gigs_this_week() -> int:
 
 # ── Écriture ──────────────────────────────────────────────────────────────────
 
-def create_job(job_data: dict) -> int:
+def create_job(job_data: dict, featured: bool = False) -> int:
     """
     Insère un nouveau gig et retourne son id.
     job_data doit contenir : title, company, description, niche, budget, contact.
+    Si featured=True, featured_until est fixé à aujourd'hui + 7 jours.
     """
-    conn = get_db()
-    c = conn.cursor()
+    conn          = get_db()
+    c             = conn.cursor()
+    featured_int  = 1 if featured else 0
+    featured_until = (
+        (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        if featured else None
+    )
     c.execute(
-        """INSERT INTO jobs (title, company, description, niche, budget, contact, date)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO jobs
+               (title, company, description, niche, budget, contact, date, featured, featured_until)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             job_data['title'],
             job_data['company'],
@@ -125,12 +161,31 @@ def create_job(job_data: dict) -> int:
             job_data['budget'],
             job_data['contact'],
             datetime.now().strftime('%Y-%m-%d'),
+            featured_int,
+            featured_until,
         )
     )
     job_id = c.lastrowid
     conn.commit()
     conn.close()
     return job_id
+
+
+def toggle_featured(job_id: int, featured: bool) -> None:
+    """Active ou désactive le featured d'un gig (usage admin)."""
+    conn          = get_db()
+    c             = conn.cursor()
+    featured_int  = 1 if featured else 0
+    featured_until = (
+        (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        if featured else None
+    )
+    c.execute(
+        "UPDATE jobs SET featured = ?, featured_until = ? WHERE id = ?",
+        (featured_int, featured_until, job_id)
+    )
+    conn.commit()
+    conn.close()
 
 
 def delete_job(job_id: int) -> None:

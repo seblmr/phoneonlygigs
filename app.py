@@ -382,21 +382,61 @@ def privacy():
 @app.route('/generate-ideas')
 @rate_limit(max_calls=5, period=60)
 def generate_ideas():
-    import random
-    ideas = [
-        "Build a Telegram AI agent that replies automatically using Termux + Python",
-        "Create a phone-only X growth bot (Termux script that likes & comments)",
-        "Scrape trending TikTok sounds and auto-post Reels via Termux",
-        "Make a lightweight AI content repurposer (YouTube → X threads)",
-        "Develop a mobile solopreneur dashboard that runs entirely in Termux",
-        "Automate Stripe payouts + invoice generation from phone",
-        "Build a no-laptop dropshipping notifier (price tracker in Termux)",
-        "Create an AI agent that finds micro-influencers on X and DMs them",
-        "Phone-only lead gen bot for indie hackers (Scrapes IndieHackers + DM)",
-        "Termux-based crypto arbitrage alert system (super light)",
-    ]
-    random.shuffle(ideas)
-    return jsonify({"ideas": ideas[:4]})
+    import urllib.request
+    import urllib.error
+
+    api_key = os.getenv('ANTHROPIC_API_KEY')
+    if not api_key:
+        return jsonify({"error": "AI unavailable — missing API key"}), 503
+
+    prompt = """You are a creative assistant for PhoneOnlyGigs, a freelance marketplace
+exclusively for people who work from their smartphone (Termux, Python, AI agents,
+mobile automation — no laptop required).
+
+Generate exactly 4 original gig ideas that a company or solopreneur could post today.
+Each idea should be a concrete, hireable task — specific enough to be actionable.
+Vary the niches: mix AI agents, Termux scripts, mobile automation, and content/growth work.
+Keep each idea to one punchy sentence, max 15 words.
+
+Respond with ONLY a JSON array of 4 strings, no commentary, no markdown, no code fences.
+Example format: ["Idea one", "Idea two", "Idea three", "Idea four"]"""
+
+    payload = json.dumps({
+        "model":      "claude-haiku-4-5-20251001",  # rapide et économique pour cette tâche
+        "max_tokens": 256,
+        "messages":   [{"role": "user", "content": prompt}],
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=payload,
+        headers={
+            "x-api-key":         api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type":      "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data  = json.loads(resp.read().decode())
+            # Le contenu est dans data['content'][0]['text']
+            raw   = data["content"][0]["text"].strip()
+            ideas = json.loads(raw)  # Claude répond en JSON pur selon le prompt
+            if not isinstance(ideas, list) or len(ideas) == 0:
+                raise ValueError("Unexpected response shape")
+            return jsonify({"ideas": ideas[:4]})
+
+    except urllib.error.HTTPError as e:
+        print(f"[generate-ideas] Anthropic HTTP error {e.code}: {e.read().decode()}")
+        return jsonify({"error": "AI temporarily unavailable"}), 503
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        print(f"[generate-ideas] Parse error: {e}")
+        return jsonify({"error": "Could not parse AI response"}), 503
+    except Exception as e:
+        print(f"[generate-ideas] Unexpected error: {e}")
+        return jsonify({"error": "Something went wrong"}), 503
 
 
 # ── Stripe Webhook ────────────────────────────────────────────────────────────

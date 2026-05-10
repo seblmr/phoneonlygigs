@@ -222,9 +222,15 @@
 
     // ── Générateur d'idées ────────────────────────────────────────────────────
     function generateIdeas() {
+        const btn = document.querySelector('button[onclick="generateIdeas()"]');
+        const original = btn.textContent;
+        btn.textContent = '⏳ Generating…';
+        btn.disabled = true;
+
         fetch('/generate-ideas')
             .then(r => r.json())
             .then(data => {
+                if (data.error) throw new Error(data.error);
                 const ideas = data.ideas;
                 document.getElementById('title').value = ideas[0];
                 document.getElementById('description').value =
@@ -234,9 +240,46 @@
                 ['title', 'description'].forEach(id =>
                     document.getElementById(id).dispatchEvent(new Event('input'))
                 );
-                alert("✅ Ideas generated! Feel free to tweak.");
+                // Affiche les 3 autres idées sous le bouton
+                showOtherIdeas(ideas.slice(1));
             })
-            .catch(() => alert("Couldn't load ideas — try again."));
+            .catch(err => alert(`Couldn't generate ideas: ${err.message}`))
+            .finally(() => {
+                btn.textContent = original;
+                btn.disabled = false;
+            });
+    }
+
+    function showOtherIdeas(ideas) {
+        let box = document.getElementById('other-ideas');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'other-ideas';
+            box.className = 'mt-2 mb-3';
+            document.querySelector('button[onclick="generateIdeas()"]').after(box);
+        }
+        box.innerHTML = `
+            <p class="text-muted small mb-1">Other ideas — click to use:</p>
+            ${ideas.map(idea => `
+                <button type="button"
+                        class="btn btn-outline-secondary btn-sm me-1 mb-1 text-start"
+                        style="font-size:12px;white-space:normal;text-align:left;"
+                        onclick="useIdea(this.dataset.idea)"
+                        data-idea="${idea.replace(/"/g, '&quot;')}">
+                    ${idea}
+                </button>`).join('')}`;
+    }
+
+    function useIdea(idea) {
+        document.getElementById('title').value = idea;
+        document.getElementById('description').value =
+            "I'm looking for a phone-only builder with Termux/Python experience to "
+            + idea.toLowerCase()
+            + ". Must run 100% on mobile. Budget: see below. DM me on X/Telegram for details.";
+        ['title', 'description'].forEach(id =>
+            document.getElementById(id).dispatchEvent(new Event('input'))
+        );
+        window.scrollTo({ top: document.getElementById('title').offsetTop - 20, behavior: 'smooth' });
     }
 </script>
 
